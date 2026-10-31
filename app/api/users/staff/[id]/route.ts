@@ -1,107 +1,84 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getCurrentUser, requireRole } from '@/lib/auth/session';
 import { updateStaffSchema } from '@/lib/validations/auth';
+import { errorResponse, successResponse } from '@/lib/utils/api-response';
 
-async function verifyAdmin(supabase: any) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, is_active')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin' || !profile.is_active) {
-    return null;
-  }
-
-  return user;
-}
-
+// GET /api/users/staff/[id] - Admin view staff details
 export async function GET(
-  request: Request,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser();
+    const authCheck = requireRole(user, ['ADMIN']);
+    if (!authCheck.authorized) return authCheck.errorResponse!;
+
     const { id } = await params;
-    const supabase = await createClient();
-    const admin = await verifyAdmin(supabase);
 
-    if (!admin) {
-      return NextResponse.json({ error: 'Access denied: Admin role required' }, { status: 403 });
+    const staff = await prisma.user.findFirst({
+      where: { id, role: 'STAFF' },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!staff) {
+      return errorResponse('Staff member not found', 'NOT_FOUND', 404);
     }
 
-    const { data: staff, error } = await supabase
-      .from('profiles')
-      .select('id, email, role, full_name, phone, is_active, created_at, updated_at')
-      .eq('id', id)
-      .eq('role', 'staff')
-      .single();
-
-    if (error || !staff) {
-      return NextResponse.json({ error: 'Staff member not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ staff });
+    return successResponse({ staff });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
 
+// PUT /api/users/staff/[id] - Admin update staff
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser();
+    const authCheck = requireRole(user, ['ADMIN']);
+    if (!authCheck.authorized) return authCheck.errorResponse!;
+
     const { id } = await params;
-    const supabase = await createClient();
-    const admin = await verifyAdmin(supabase);
-
-    if (!admin) {
-      return NextResponse.json({ error: 'Access denied: Admin role required' }, { status: 403 });
-    }
-
     const body = await request.json();
     const validated = updateStaffSchema.safeParse(body);
 
     if (!validated.success) {
-      return NextResponse.json(
-        { error: validated.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(validated.error.errors[0].message, 'VALIDATION_ERROR', 400);
     }
 
     const { fullName, phone, isActive } = validated.data;
 
-    const updatePayload: Record<string, any> = {
-      full_name: fullName,
-      phone: phone || null,
-      updated_at: new Date().toISOString(),
-    };
+    const staff = await prisma.user.update({
+      where: { id },
+      data: {
+        fullName,
+        phone: phone || null,
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+      },
+    });
 
-    if (typeof isActive === 'boolean') {
-      updatePayload.is_active = isActive;
-    }
-
-    const { data: staff, error } = await supabase
-      .from('profiles')
-      .update(updatePayload)
-      .eq('id', id)
-      .eq('role', 'staff')
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, staff });
+    return successResponse({ staff }, 200, 'Staff profile updated successfully');
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
-

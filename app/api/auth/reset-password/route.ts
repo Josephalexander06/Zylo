@@ -1,36 +1,34 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/db';
 import { resetPasswordSchema } from '@/lib/validations/auth';
+import { hashPassword } from '@/lib/auth/password';
+import { getCurrentUser } from '@/lib/auth/session';
+import { errorResponse, successResponse } from '@/lib/utils/api-response';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return errorResponse('Session expired or invalid reset link', 'UNAUTHORIZED', 401);
+    }
+
     const body = await request.json();
     const validated = resetPasswordSchema.safeParse(body);
 
     if (!validated.success) {
-      return NextResponse.json(
-        { error: validated.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(validated.error.errors[0].message, 'VALIDATION_ERROR', 400);
     }
 
     const { password } = validated.data;
-    const supabase = await createClient();
+    const passwordHash = await hashPassword(password);
 
-    const { error } = await supabase.auth.updateUser({
-      password,
+    await prisma.user.update({
+      where: { id: user.userId },
+      data: { passwordHash },
     });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Password updated successfully. You can now login with your new password.',
-    });
+    return successResponse({ success: true }, 200, 'Password has been updated successfully.');
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Internal server error', 'INTERNAL_ERROR', 500);
   }
 }
-

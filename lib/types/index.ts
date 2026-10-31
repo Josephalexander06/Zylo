@@ -1,231 +1,101 @@
-export type UserRole = 'admin' | 'staff' | 'customer';
-
-export type SubscriptionStatus = 'draft' | 'quotation' | 'confirmed' | 'active' | 'closed';
-
-export type InvoiceStatus = 'draft' | 'confirmed' | 'sent' | 'paid' | 'cancelled';
-
-export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'expired' | 'rejected';
-
-export type BillingFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
-
-export type ProductType = 'software' | 'service';
-
-export type DiscountType = 'fixed' | 'percentage';
-
-export type DiscountScope = 'product' | 'subscription';
-
-export type PaymentMethod = 'cash' | 'bank_transfer' | 'upi' | 'card' | 'other';
+export type UserRole = 'ADMIN' | 'STAFF' | 'CUSTOMER';
+export type BillingFrequency = 'MONTHLY' | 'YEARLY';
+export type SubscriptionStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'CLOSED';
+export type InvoiceStatus = 'DRAFT' | 'CONFIRMED' | 'PAID' | 'CANCELLED';
+export type PaymentMethod = 'UPI' | 'BANK_TRANSFER' | 'CASH' | 'CARD' | 'OTHER';
 
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
-  full_name: string;
-  company_name?: string | null;
+  fullName: string;
+  companyName?: string | null;
   phone?: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  isActive: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
-export interface Product {
-  id: string;
-  name: string;
-  product_type: ProductType;
-  sales_price: number;
-  cost_price: number;
-  notes?: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProductVariant {
-  id: string;
-  product_id: string;
-  variant_name: string;
-  additional_price: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SubscriptionPlan {
+export interface Plan {
   id: string;
   name: string;
   description?: string | null;
-  price: number;
-  billing_frequency: BillingFrequency;
-  min_quantity: number;
-  available_from: string;
-  available_until?: string | null;
-  auto_close: boolean;
-  allow_early_closure: boolean;
-  allow_pause: boolean;
-  allow_renewal: boolean;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaxRule {
-  id: string;
-  name: string;
-  rate: number; // e.g. 18.00 for 18%
-  description?: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DiscountRule {
-  id: string;
-  name: string;
-  description?: string | null;
-  discount_type: DiscountType;
-  discount_value: number;
-  min_purchase_amount?: number | null;
-  min_quantity?: number | null;
-  start_date: string;
-  end_date: string;
-  max_usage_count?: number | null;
-  current_usage_count: number;
-  scope: DiscountScope;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface QuotationTemplate {
-  id: string;
-  name: string;
-  description?: string | null;
-  default_plan_id?: string | null;
-  validity_days: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Quotation {
-  id: string;
-  quotation_number: string;
-  customer_id: string;
-  plan_id?: string | null;
-  template_id?: string | null;
-  subtotal: number;
-  discount_amount: number;
-  tax_amount: number;
-  total_amount: number;
-  valid_until: string;
-  payment_terms?: string | null;
-  status: QuotationStatus;
-  notes?: string | null;
-  converted_subscription_id?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface QuotationItem {
-  id: string;
-  quotation_id: string;
-  product_id: string;
-  variant_id?: string | null;
-  quantity: number;
-  unit_price: number;
-  tax_rate: number;
-  line_total: number;
+  price: number | string;
+  billingFrequency: BillingFrequency;
+  taxPercent: number | string;
+  isActive: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 export interface Subscription {
   id: string;
-  subscription_number: string;
-  customer_id: string;
-  plan_id: string;
-  quotation_id?: string | null;
-  parent_subscription_id?: string | null;
-  start_date: string;
-  expiry_date?: string | null;
-  next_billing_date: string;
+  subscriptionNumber: string;
+  customerId: string;
+  planId: string;
+  startDate: string | Date;
+  expiryDate?: string | Date | null;
+  nextBillingDate: string | Date;
   status: SubscriptionStatus;
-  is_paused: boolean;
-  paused_at?: string | null;
-  payment_terms?: string | null;
-  subtotal: number;
-  discount_amount: number;
-  tax_amount: number;
-  total_amount: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SubscriptionItem {
-  id: string;
-  subscription_id: string;
-  product_id: string;
-  variant_id?: string | null;
-  quantity: number;
-  unit_price: number;
-  line_total: number;
+  unitPrice: number | string;
+  taxPercent: number | string;
+  totalPerPeriod: number | string;
+  planName: string;
+  billingFrequency: BillingFrequency;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  customer?: UserProfile;
+  plan?: Plan;
 }
 
 export interface Invoice {
   id: string;
-  invoice_number: string;
-  customer_id: string;
-  subscription_id?: string | null;
-  billing_period_start?: string | null;
-  billing_period_end?: string | null;
-  invoice_date: string;
-  due_date: string;
-  subtotal: number;
-  discount_amount: number;
-  taxable_amount: number;
-  tax_amount: number;
-  total_amount: number;
-  amount_paid: number;
-  outstanding_amount: number;
-  status: InvoiceStatus;
-  notes?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface InvoiceItem {
-  id: string;
-  invoice_id: string;
-  product_id?: string | null;
-  variant_id?: string | null;
+  invoiceNumber: string;
+  customerId: string;
+  subscriptionId?: string | null;
+  billingPeriodStart?: string | Date | null;
+  billingPeriodEnd?: string | Date | null;
+  invoiceDate: string | Date;
+  dueDate: string | Date;
   description: string;
   quantity: number;
-  unit_price: number;
-  discount_amount: number;
-  tax_rate: number;
-  tax_amount: number;
-  line_total: number;
+  unitPrice: number | string;
+  subtotal: number | string;
+  taxPercent: number | string;
+  taxAmount: number | string;
+  totalAmount: number | string;
+  amountPaid: number | string;
+  outstandingAmount: number | string;
+  status: InvoiceStatus;
+  notes?: string | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  customer?: UserProfile;
+  payments?: Payment[];
 }
 
 export interface Payment {
   id: string;
-  payment_reference: string;
-  invoice_id: string;
-  customer_id: string;
-  payment_method: PaymentMethod;
-  amount: number;
-  payment_date: string;
+  paymentReference: string;
+  invoiceId: string;
+  customerId: string;
+  paymentMethod: PaymentMethod;
+  amount: number | string;
+  paymentDate: string | Date;
+  transactionId?: string | null;
   notes?: string | null;
-  created_by?: string | null;
-  created_at: string;
+  createdById?: string | null;
+  createdAt: string | Date;
+  createdBy?: UserProfile | null;
+  invoice?: Invoice;
 }
 
-export interface BillingRecord {
+export interface FollowUp {
   id: string;
-  subscription_id: string;
-  invoice_id?: string | null;
-  billing_period_start: string;
-  billing_period_end: string;
-  status: 'success' | 'failed' | 'skipped';
-  error_message?: string | null;
-  processed_at: string;
+  entityType: 'subscription' | 'invoice';
+  entityId: string;
+  note: string;
+  staffId: string;
+  createdAt: string | Date;
+  staff?: UserProfile;
 }
-

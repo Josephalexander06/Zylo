@@ -1,78 +1,74 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getCurrentUser } from '@/lib/auth/session';
+import { prisma } from '@/lib/db';
 import { updateProfileSchema } from '@/lib/validations/auth';
+import { errorResponse, successResponse } from '@/lib/utils/api-response';
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getCurrentUser();
+    if (!session) {
+      return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    const profile = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        companyName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!profile) {
+      return errorResponse('User not found', 'NOT_FOUND', 404);
     }
 
-    return NextResponse.json({ profile });
+    return successResponse({ profile });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getCurrentUser();
+    if (!session) {
+      return errorResponse('Unauthorized', 'UNAUTHORIZED', 401);
     }
 
     const body = await request.json();
     const validated = updateProfileSchema.safeParse(body);
 
     if (!validated.success) {
-      return NextResponse.json(
-        { error: validated.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(validated.error.errors[0].message, 'VALIDATION_ERROR', 400);
     }
 
     const { fullName, companyName, phone } = validated.data;
 
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: fullName,
-        company_name: companyName || null,
+    const profile = await prisma.user.update({
+      where: { id: session.userId },
+      data: {
+        fullName,
+        companyName: companyName || null,
         phone: phone || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .select()
-      .single();
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        companyName: true,
+        phone: true,
+        role: true,
+      },
+    });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ success: true, profile });
+    return successResponse({ profile }, 200, 'Profile updated successfully');
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
-

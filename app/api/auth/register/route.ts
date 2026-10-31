@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/db';
 import { registerSchema } from '@/lib/validations/auth';
+import { hashPassword } from '@/lib/auth/password';
+import { errorResponse, successResponse } from '@/lib/utils/api-response';
 
 export async function POST(request: Request) {
   try {
@@ -8,62 +10,48 @@ export async function POST(request: Request) {
     const validatedData = registerSchema.safeParse(body);
 
     if (!validatedData.success) {
-      return NextResponse.json(
-        { error: validatedData.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(validatedData.error.errors[0].message, 'VALIDATION_ERROR', 400);
     }
 
     const { email, password, fullName, companyName, phone } = validatedData.data;
-    const supabase = await createClient();
 
-    // Sign up customer using Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          role: 'customer', // Customer self-registration always assigns 'customer'
-        },
+    // Check if email already registered
+    const existing = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (existing) {
+      return errorResponse('An account with this email already exists', 'EMAIL_EXISTS', 409);
+    }
+
+    // Hash password with bcrypt (12 rounds)
+    const passwordHash = await hashPassword(password);
+
+    // Create user with default role CUSTOMER
+    const newUser = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        passwordHash,
+        fullName,
+        companyName: companyName || null,
+        phone: phone || null,
+        role: 'CUSTOMER',
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        companyName: true,
+        phone: true,
+        createdAt: true,
       },
     });
 
-    if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 400 });
-    }
-
-    if (!authData.user) {
-      return NextResponse.json({ error: 'User registration failed.' }, { status: 500 });
-    }
-
-    // Insert user profile into public.profiles table
-    const { error: profileError } = await supabase.from('profiles').upsert({
-      id: authData.user.id,
-      email: authData.user.email!,
-      role: 'customer',
-      full_name: fullName,
-      company_name: companyName || null,
-      phone: phone || null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    });
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Account registered successfully.',
-      user: {
-        id: authData.user.id,
-        email: authData.user.email,
-        role: 'customer',
-      },
-    });
+    return successResponse(newUser, 201, 'Account registered successfully. You can now login.');
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
+    console.error('Registration error:', err);
+    return errorResponse(err.message || 'Internal server error', 'INTERNAL_ERROR', 500);
   }
 }
-

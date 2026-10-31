@@ -1,122 +1,86 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getCurrentUser, requireRole } from '@/lib/auth/session';
 import { createStaffSchema } from '@/lib/validations/auth';
-
-// Helper: Ensure the caller is an active ADMIN
-async function verifyAdmin(supabase: any) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, is_active')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin' || !profile.is_active) {
-    return null;
-  }
-
-  return user;
-}
+import { hashPassword } from '@/lib/auth/password';
+import { errorResponse, successResponse } from '@/lib/utils/api-response';
 
 // GET /api/users/staff - List staff (Admin only)
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const admin = await verifyAdmin(supabase);
+    const user = await getCurrentUser();
+    const authCheck = requireRole(user, ['ADMIN']);
+    if (!authCheck.authorized) return authCheck.errorResponse!;
 
-    if (!admin) {
-      return NextResponse.json({ error: 'Access denied: Admin role required' }, { status: 403 });
-    }
+    const staffList = await prisma.user.findMany({
+      where: { role: 'STAFF' },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const { data: staffList, error } = await supabase
-      .from('profiles')
-      .select('id, email, role, full_name, phone, is_active, created_at, updated_at')
-      .eq('role', 'staff')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ staff: staffList || [] });
+    return successResponse({ staff: staffList });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
 
 // POST /api/users/staff - Create staff (Admin only)
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const admin = await verifyAdmin(supabase);
-
-    if (!admin) {
-      return NextResponse.json({ error: 'Access denied: Admin role required' }, { status: 403 });
-    }
+    const user = await getCurrentUser();
+    const authCheck = requireRole(user, ['ADMIN']);
+    if (!authCheck.authorized) return authCheck.errorResponse!;
 
     const body = await request.json();
     const validated = createStaffSchema.safeParse(body);
 
     if (!validated.success) {
-      return NextResponse.json(
-        { error: validated.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(validated.error.errors[0].message, 'VALIDATION_ERROR', 400);
     }
 
     const { email, password, fullName, phone } = validated.data;
-    const adminClient = createAdminClient();
 
-    // Admin creates staff user in Auth
-    const { data: newAuthUser, error: createAuthError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
-        role: 'staff',
+    // Check if email already exists
+    const existing = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (existing) {
+      return errorResponse('An account with this email already exists', 'EMAIL_EXISTS', 409);
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const newStaff = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        passwordHash,
+        fullName,
+        phone: phone || null,
+        role: 'STAFF',
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
       },
     });
 
-    if (createAuthError || !newAuthUser.user) {
-      return NextResponse.json(
-        { error: createAuthError?.message || 'Failed to create staff user in auth' },
-        { status: 400 }
-      );
-    }
-
-    // Insert staff profile
-    const { data: profile, error: profileError } = await adminClient
-      .from('profiles')
-      .upsert({
-        id: newAuthUser.user.id,
-        email,
-        role: 'staff',
-        full_name: fullName,
-        phone: phone || null,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Staff account created successfully',
-      staff: profile,
-    });
+    return successResponse(newStaff, 201, 'Staff member added successfully');
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return errorResponse(err.message || 'Server error', 'INTERNAL_ERROR', 500);
   }
 }
-
