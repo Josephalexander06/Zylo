@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding database with default users and sample data...');
+  console.log('Seeding database with default users and sample plans...');
 
   const passwordHash = await bcrypt.hash('Zylo@2026Secure!', 12);
 
@@ -56,6 +56,46 @@ async function main() {
   });
   console.log(`Created/Verified Customer: ${customer.email}`);
 
+  // 4. Sample Plans
+  const plans = [
+    {
+      name: 'Brightloop Starter Monthly',
+      description: 'Essential billing and subscription tools for small retail shops and startups.',
+      price: 1999.0,
+      billingFrequency: 'MONTHLY' as const,
+      taxPercent: 18.0,
+      isActive: true,
+    },
+    {
+      name: 'Brightloop Growth Monthly',
+      description: 'Full automated recurring billing, customer rescue queue, and multi-staff management.',
+      price: 4999.0,
+      billingFrequency: 'MONTHLY' as const,
+      taxPercent: 18.0,
+      isActive: true,
+    },
+    {
+      name: 'Brightloop Enterprise Annual',
+      description: 'Annual corporate subscription with dedicated account manager and priority invoicing.',
+      price: 49999.0,
+      billingFrequency: 'YEARLY' as const,
+      taxPercent: 18.0,
+      isActive: true,
+    },
+  ];
+
+  for (const p of plans) {
+    const existing = await prisma.plan.findFirst({
+      where: { name: p.name },
+    });
+    if (!existing) {
+      await prisma.plan.create({ data: p });
+      console.log(`Created Plan: ${p.name} (₹${p.price})`);
+    } else {
+      console.log(`Plan already exists: ${p.name}`);
+    }
+  }
+
   console.log('\nSeed completed successfully!');
   console.log('----------------------------------------------------');
   console.log('Default credentials (password for all: Zylo@2026Secure!):');
@@ -73,4 +113,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
